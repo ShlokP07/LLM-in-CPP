@@ -1,0 +1,10 @@
+{
+  "name": "llm-from-scratch",
+  "version": "0.1.0",
+  "description": "Minimal Tensor + Autograd + Transformer framework for miniGPT training",
+  "dependencies": [
+    "openblas"
+  ],
+  "builtin-baseline": "62159a45e18f3a9ac0548628dcaf74fcb60c6ff9"
+}
+
