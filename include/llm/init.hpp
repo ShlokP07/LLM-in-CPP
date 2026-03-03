@@ -24,4 +24,11 @@ void xavier_uniform_(Tensor& t);
 /** Fill tensor with zeros. In-place; works for float32 (and int64 if needed). */
 void zeros_(Tensor& t);
 
+/**
+ * Fill a float32 tensor with a Bernoulli mask (0 or 1).
+ * Each element is 1 with probability p_keep, else 0.
+ * Intended for Dropout; deterministic under seed().
+ */
+void bernoulli_mask_(Tensor& t, float p_keep);
+
 }  // namespace llm

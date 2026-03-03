@@ -39,6 +39,19 @@ private:
   int64_t embedding_dim_;
 };
 
+/** Dropout layer. In train mode: zero elements with probability p and scale by 1/(1-p). In eval: identity. */
+class Dropout : public Module {
+public:
+  explicit Dropout(float p = 0.5f);
+
+  Tensor operator()(const Tensor& x);
+
+  float p() const { return p_; }
+
+private:
+  float p_;
+};
+
 /** Layer normalization over the last dimension. Normalize then scale + shift with gamma/beta. */
 class LayerNorm : public Module {
 public:

@@ -40,6 +40,7 @@ using llm::xavier_uniform_;
 using llm::zeros_;
 using llm::Linear;
 using llm::Embedding;
+using llm::Dropout;
 using llm::LayerNorm;
 
 // Verify that version() returns some non-null, non-empty string.
@@ -593,6 +594,56 @@ static void test_embedding_backward() {
   assert((params[0]->grad()->shape() == std::vector<int64_t>{5, 3}));
 }
 
+// --- Dropout tests ---
+
+static Tensor ones_2d(int64_t M, int64_t N) {
+  Tensor t({M, N}, DType::Float32, Device::cpu(), false);
+  float* p = t.data_float();
+  for (int64_t i = 0; i < t.numel(); ++i) p[i] = 1.f;
+  return t;
+}
+
+static void test_dropout_eval_identity() {
+  Dropout d(0.5f);
+  d.eval();
+  Tensor x = Tensor::from_data({1.f, 2.f, 3.f, 4.f}, {2, 2}, false);
+  Tensor y = d(x);
+  assert(y.shape() == x.shape());
+  for (int i = 0; i < 4; ++i)
+    assert(std::fabs(y.data_float()[i] - x.data_float()[i]) < 1e-6f);
+}
+
+static void test_dropout_train_deterministic_with_seed() {
+  Dropout d(0.25f);
+  d.train();
+  Tensor x = ones_2d(3, 3);
+
+  seed(123);
+  Tensor y1 = d(x);
+  seed(123);
+  Tensor y2 = d(x);
+
+  for (int64_t i = 0; i < y1.numel(); ++i)
+    assert(y1.data_float()[i] == y2.data_float()[i]);
+}
+
+static void test_dropout_backward_matches_mask_scale() {
+  Dropout d(0.5f);
+  d.train();
+  Tensor x = ones_2d(2, 4);
+  x.set_requires_grad(true);
+
+  seed(7);
+  Tensor y = d(x);
+  Tensor loss = sum(y);
+  loss.backward();
+
+  assert(x.grad() != nullptr);
+  // For x = ones, d(sum(y))/dx == mask*scale, which equals y itself.
+  for (int64_t i = 0; i < x.numel(); ++i)
+    assert(std::fabs(x.grad()->data_float()[i] - y.data_float()[i]) < 1e-6f);
+}
+
 int main() {
   std::cout << "Running LLM tests..." << std::endl;
 
@@ -633,6 +684,10 @@ int main() {
   test_gather_backward();
   test_embedding_forward_shape();
   test_embedding_backward();
+
+  test_dropout_eval_identity();
+  test_dropout_train_deterministic_with_seed();
+  test_dropout_backward_matches_mask_scale();
 
   std::cout << "All Tensor and autograd tests passed." << std::endl;
   return 0;

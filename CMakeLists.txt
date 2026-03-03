@@ -55,6 +55,7 @@ add_library(llm_core STATIC
   src/nn/linear.cpp
   src/nn/layernorm.cpp
   src/nn/embedding.cpp
+  src/nn/dropout.cpp
   src/utils/init.cpp
 )
 

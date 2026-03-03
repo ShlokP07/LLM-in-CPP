@@ -65,4 +65,18 @@ void zeros_(Tensor& t) {
   }
 }
 
+void bernoulli_mask_(Tensor& t, float p_keep) {
+  if (t.dtype() != DType::Float32)
+    throw std::invalid_argument("bernoulli_mask_: expected float32 tensor");
+  if (p_keep < 0.f || p_keep > 1.f)
+    throw std::invalid_argument("bernoulli_mask_: p_keep must be in [0, 1]");
+
+  std::uniform_real_distribution<float> dist(0.f, 1.f);
+  float* p = t.data_float();
+  for (int64_t i = 0; i < t.numel(); ++i) {
+    float u = dist(get_rng());
+    p[i] = (u < p_keep) ? 1.f : 0.f;
+  }
+}
+
 }  // namespace llm
