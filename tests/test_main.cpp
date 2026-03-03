@@ -38,6 +38,7 @@ using llm::normal_;
 using llm::xavier_uniform_;
 using llm::zeros_;
 using llm::Linear;
+using llm::LayerNorm;
 
 // Verify that version() returns some non-null, non-empty string.
 static void test_version() {
@@ -464,6 +465,56 @@ static void test_linear_backward_weight_and_bias() {
   assert(has_weight_grad && has_bias_grad);
 }
 
+// --- LayerNorm tests ---
+
+static void test_layernorm_forward_shape() {
+  LayerNorm ln(4, 1e-5f);
+  Tensor x({2, 4}, DType::Float32, Device::cpu(), false);
+  uniform_(x, 0.f, 1.f);
+  Tensor y = ln(x);
+  assert(y.dim() == 2);
+  assert(y.shape()[0] == 2);
+  assert(y.shape()[1] == 4);
+}
+
+static void test_layernorm_grad_check() {
+  seed(0);
+  LayerNorm ln(3, 1e-5f);
+  Tensor x = Tensor::from_data({1.f, 2.f, 3.f, 4.f, 5.f, 6.f}, {2, 3}, true);
+  Tensor y = ln(x);
+  Tensor loss = sum(y);
+  loss.backward();
+
+  assert(x.grad() != nullptr);
+  assert((x.grad()->shape() == std::vector<int64_t>{2, 3}));
+
+  auto params = ln.parameters();
+  assert(params.size() == 2);
+  for (Parameter* p : params) {
+    assert(p->grad() != nullptr);
+    assert((p->grad()->shape() == std::vector<int64_t>{3}));
+  }
+
+  // Numerical gradient check: perturb x[0,0] by eps and compare d(loss)/dx[0,0]
+  const float eps = 1e-4f;
+  float loss_plus = 0.f, loss_minus = 0.f;
+  {
+    llm::NoGradGuard guard;
+    Tensor xp = Tensor::from_data({1.f + eps, 2.f, 3.f, 4.f, 5.f, 6.f}, {2, 3}, false);
+    Tensor yp = ln(xp);
+    loss_plus = sum(yp).data_float()[0];
+  }
+  {
+    llm::NoGradGuard guard;
+    Tensor xm = Tensor::from_data({1.f - eps, 2.f, 3.f, 4.f, 5.f, 6.f}, {2, 3}, false);
+    Tensor ym = ln(xm);
+    loss_minus = sum(ym).data_float()[0];
+  }
+  float numerical = (loss_plus - loss_minus) / (2.f * eps);
+  float analytical = x.grad()->data_float()[0];
+  assert(std::fabs(numerical - analytical) < 0.02f);
+}
+
 int main() {
   std::cout << "Running LLM tests..." << std::endl;
 
@@ -496,6 +547,9 @@ int main() {
   test_linear_forward_shape();
   test_linear_no_bias_forward_shape();
   test_linear_backward_weight_and_bias();
+
+  test_layernorm_forward_shape();
+  test_layernorm_grad_check();
 
   std::cout << "All Tensor and autograd tests passed." << std::endl;
   return 0;

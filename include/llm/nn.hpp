@@ -23,4 +23,20 @@ private:
   bool has_bias_;
 };
 
+/** Layer normalization over the last dimension. Normalize then scale + shift with gamma/beta. */
+class LayerNorm : public Module {
+public:
+  LayerNorm(int64_t normalized_shape, float eps = 1e-5f);
+
+  /** Forward: x shape (..., D) -> same shape. Currently 2D only: (N, D). */
+  Tensor operator()(const Tensor& x);
+
+  int64_t normalized_shape() const { return normalized_shape_; }
+  float eps() const { return eps_; }
+
+private:
+  int64_t normalized_shape_;
+  float eps_;
+};
+
 }  // namespace llm
