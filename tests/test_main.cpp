@@ -6,6 +6,7 @@
 #include <llm/ops.hpp>
 #include <llm/autograd.hpp>
 #include <llm/module.hpp>
+#include <llm/init.hpp>
 
 #include <cassert>
 #include <cmath>
@@ -21,9 +22,20 @@ using llm::Module;
 using llm::Parameter;
 using llm::add;
 using llm::mul;
+using llm::sub;
+using llm::div;
+using llm::neg;
 using llm::sum;
+using llm::mean;
+using llm::exp;
+using llm::max;
 using llm::matmul;
 using llm::transpose;
+using llm::seed;
+using llm::uniform_;
+using llm::normal_;
+using llm::xavier_uniform_;
+using llm::zeros_;
 
 // Verify that version() returns some non-null, non-empty string.
 static void test_version() {
@@ -174,6 +186,83 @@ static void grad_check_transpose() {
     assert(std::fabs(a.grad()->data_float()[i] - 1.f) < 1e-5f);
 }
 
+// Broadcasting add for bias: (M,N) + (N).
+static void test_add_bias_broadcast_grad() {
+  Tensor x = Tensor::from_data({1.f, 2.f, 3.f, 4.f, 5.f, 6.f}, {2, 3}, true);
+  Tensor b = Tensor::from_data({0.5f, 1.f, 1.5f}, {3}, true);
+  Tensor y = add(x, b);  // shape (2,3)
+  Tensor loss = sum(y);
+  loss.backward();
+
+  // d(loss)/dx = ones, d(loss)/db = number of rows (2).
+  assert(x.grad() != nullptr);
+  assert(b.grad() != nullptr);
+  for (int i = 0; i < 6; ++i) {
+    assert(std::fabs(x.grad()->data_float()[i] - 1.f) < 1e-5f);
+  }
+  for (int j = 0; j < 3; ++j) {
+    assert(std::fabs(b.grad()->data_float()[j] - 2.f) < 1e-5f);
+  }
+}
+
+// Broadcasting mul for bias: (M,N) * (N).
+static void test_mul_bias_broadcast_grad() {
+  Tensor x = Tensor::from_data({1.f, 2.f, 3.f, 4.f}, {2, 2}, true);
+  Tensor b = Tensor::from_data({2.f, 3.f}, {2}, true);
+  Tensor y = mul(x, b);  // shape (2,2)
+  Tensor loss = sum(y);
+  loss.backward();
+
+  // y = x * b, loss = sum(y)
+  // dL/dx[i,j] = b[j], dL/db[j] = sum_i x[i,j].
+  assert(x.grad() != nullptr);
+  assert(b.grad() != nullptr);
+  assert(std::fabs(x.grad()->data_float()[0] - 2.f) < 1e-5f);
+  assert(std::fabs(x.grad()->data_float()[1] - 3.f) < 1e-5f);
+  assert(std::fabs(x.grad()->data_float()[2] - 2.f) < 1e-5f);
+  assert(std::fabs(x.grad()->data_float()[3] - 3.f) < 1e-5f);
+
+  float gb0 = b.grad()->data_float()[0];
+  float gb1 = b.grad()->data_float()[1];
+  // column 0: x[0,0] + x[1,0] = 1 + 3 = 4
+  // column 1: x[0,1] + x[1,1] = 2 + 4 = 6
+  assert(std::fabs(gb0 - 4.f) < 1e-5f);
+  assert(std::fabs(gb1 - 6.f) < 1e-5f);
+}
+
+// Basic checks for sub/div/neg/mean/exp/max shapes and values (no full grad checks yet).
+static void test_elementwise_and_reductions_shapes() {
+  Tensor a = Tensor::from_data({1.f, 2.f, 3.f, 4.f}, {2, 2}, false);
+  Tensor b = Tensor::from_data({4.f, 3.f, 2.f, 1.f}, {2, 2}, false);
+
+  Tensor d = sub(a, b);
+  assert(d.shape().size() == 2);
+  assert(d.shape()[0] == 2 && d.shape()[1] == 2);
+
+  Tensor q = div(a, b);
+  assert(q.shape().size() == 2);
+  assert(q.shape()[0] == 2 && q.shape()[1] == 2);
+
+  Tensor n = neg(a);
+  assert(n.shape().size() == 2);
+  assert(std::fabs(n.data_float()[0] + 1.f) < 1e-5f);
+
+  Tensor m0 = mean(a, 0, false);
+  assert(m0.shape().size() == 1 && m0.shape()[0] == 2);
+
+  Tensor m1 = mean(a, 1, false);
+  assert(m1.shape().size() == 1 && m1.shape()[0] == 2);
+
+  Tensor e = exp(a);
+  assert(e.shape().size() == 2);
+
+  Tensor mx0 = max(a, 0, false);
+  assert(mx0.shape().size() == 1 && mx0.shape()[0] == 2);
+
+  Tensor mx1 = max(a, 1, false);
+  assert(mx1.shape().size() == 1 && mx1.shape()[0] == 2);
+}
+
 static void test_no_grad() {
   Tensor a = Tensor::from_data({1.f}, {1}, true);
   Tensor b = Tensor::from_data({2.f}, {1}, true);
@@ -241,6 +330,95 @@ static void test_module_parameters_and_modes() {
   assert(m.child->is_training());
 }
 
+// --- RNG & init tests ---
+
+static void test_seed_uniform_determinism_and_range() {
+  Tensor t1({100}, DType::Float32, Device::cpu(), false);
+  Tensor t2({100}, DType::Float32, Device::cpu(), false);
+
+  seed(42);
+  uniform_(t1, 0.f, 1.f);
+
+  seed(42);
+  uniform_(t2, 0.f, 1.f);
+
+  for (int64_t i = 0; i < 100; ++i) {
+    assert(t1.data_float()[i] == t2.data_float()[i]);
+    assert(t1.data_float()[i] >= 0.f && t1.data_float()[i] <= 1.f);
+  }
+}
+
+static void test_uniform_range() {
+  Tensor t({1000}, DType::Float32, Device::cpu(), false);
+  seed(123);
+  uniform_(t, -2.5f, 3.5f);
+
+  for (int64_t i = 0; i < t.numel(); ++i) {
+    float v = t.data_float()[i];
+    assert(v >= -2.5f && v <= 3.5f);
+  }
+}
+
+static void test_seed_normal_determinism() {
+  Tensor t1({50}, DType::Float32, Device::cpu(), false);
+  Tensor t2({50}, DType::Float32, Device::cpu(), false);
+
+  seed(99);
+  normal_(t1, 0.f, 1.f);
+
+  seed(99);
+  normal_(t2, 0.f, 1.f);
+
+  for (int64_t i = 0; i < 50; ++i)
+    assert(t1.data_float()[i] == t2.data_float()[i]);
+}
+
+static void test_normal_approximate_stats() {
+  Tensor t({2000}, DType::Float32, Device::cpu(), false);
+  seed(1);
+  normal_(t, 5.f, 2.f);
+
+  float sum = 0.f, sum_sq = 0.f;
+  for (int64_t i = 0; i < t.numel(); ++i) {
+    float v = t.data_float()[i];
+    sum += v;
+    sum_sq += v * v;
+  }
+  float mean = sum / static_cast<float>(t.numel());
+  float var = sum_sq / static_cast<float>(t.numel()) - mean * mean;
+  assert(std::fabs(mean - 5.f) < 0.2f);
+  assert(std::fabs(std::sqrt(var) - 2.f) < 0.2f);
+}
+
+static void test_zeros_float32() {
+  Tensor t({4, 5}, DType::Float32, Device::cpu(), false);
+  uniform_(t, 1.f, 2.f);  // non-zero
+  zeros_(t);
+  for (int64_t i = 0; i < t.numel(); ++i)
+    assert(t.data_float()[i] == 0.f);
+}
+
+static void test_zeros_int64() {
+  Tensor t({3, 2}, DType::Int64, Device::cpu(), false);
+  int64_t* p = t.data_int64();
+  for (int64_t i = 0; i < t.numel(); ++i) p[i] = 999;
+  zeros_(t);
+  for (int64_t i = 0; i < t.numel(); ++i)
+    assert(t.data_int64()[i] == 0);
+}
+
+static void test_xavier_uniform_range() {
+  Tensor t({10, 20}, DType::Float32, Device::cpu(), false);
+  seed(7);
+  xavier_uniform_(t);
+
+  float limit = std::sqrt(6.f / (10.f + 20.f));
+  for (int64_t i = 0; i < t.numel(); ++i) {
+    float v = t.data_float()[i];
+    assert(v >= -limit && v <= limit);
+  }
+}
+
 int main() {
   std::cout << "Running LLM tests..." << std::endl;
 
@@ -255,9 +433,20 @@ int main() {
   grad_check_sum();
   grad_check_matmul();
   grad_check_transpose();
+  test_add_bias_broadcast_grad();
+  test_mul_bias_broadcast_grad();
+  test_elementwise_and_reductions_shapes();
   test_no_grad();
   test_detach();
   test_module_parameters_and_modes();
+
+  test_seed_uniform_determinism_and_range();
+  test_uniform_range();
+  test_seed_normal_determinism();
+  test_normal_approximate_stats();
+  test_zeros_float32();
+  test_zeros_int64();
+  test_xavier_uniform_range();
 
   std::cout << "All Tensor and autograd tests passed." << std::endl;
   return 0;
