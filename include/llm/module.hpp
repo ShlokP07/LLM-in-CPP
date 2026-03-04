@@ -58,6 +58,9 @@ protected:
                           const std::string& prefix);
 
   void collect_state(StateDict& out, const std::string& prefix) const;
+
+  /** Recursively load state by dotted name; used by load_state_dict. */
+  void load_state_dict_impl(const StateDict& state, const std::string& prefix);
 };
 
 }  // namespace llm

@@ -15,8 +15,11 @@
 #include <llm/init.hpp>
 #include <llm/nn.hpp>
 #include <llm/optim.hpp>
+#include <llm/data.hpp>
+#include <llm/checkpoint.hpp>
 
 #include <cassert>
+#include <cstdio>
 #include <cmath>
 #include <iostream>
 #include <stdexcept>
@@ -60,6 +63,14 @@ using llm::ScaledDotProductAttention;
 using llm::SGD;
 using llm::AdamW;
 using llm::clip_grad_norm_;
+using llm::Dataset;
+using llm::TensorDataset;
+using llm::DataLoader;
+using llm::Sample;
+using llm::save_tensor;
+using llm::load_tensor;
+using llm::save_state_dict;
+using llm::load_state_dict;
 
 // Verify that version() returns some non-null, non-empty string.
 static void test_version() {
@@ -889,6 +900,137 @@ static void test_attention_module_wrapper() {
   assert(out.shape()[0] == 2 && out.shape()[1] == 2);
 }
 
+// --- Dataset / DataLoader tests ---
+
+static void test_tensor_dataset_size_and_get() {
+  const int64_t N = 4;
+  const int64_t seq_len = 3;
+  Tensor input({N, seq_len}, DType::Int64, Device::cpu(), false);
+  Tensor target({N, seq_len}, DType::Int64, Device::cpu(), false);
+  int64_t* pi = input.data_int64();
+  int64_t* pt = target.data_int64();
+  for (int64_t i = 0; i < N * seq_len; ++i) {
+    pi[i] = static_cast<int64_t>(i);
+    pt[i] = static_cast<int64_t>(i + 1);
+  }
+  TensorDataset ds(input, target);
+  assert(ds.size() == N);
+  assert(ds.seq_len() == seq_len);
+
+  llm::Sample s = ds.get(1);
+  Tensor x = s.first;
+  Tensor y = s.second;
+  assert(x.shape() == std::vector<int64_t>{seq_len});
+  assert(y.shape() == std::vector<int64_t>{seq_len});
+  assert(x.dtype() == DType::Int64);
+  assert(x.data_int64()[0] == 3 && x.data_int64()[1] == 4 && x.data_int64()[2] == 5);
+  assert(y.data_int64()[0] == 4 && y.data_int64()[1] == 5 && y.data_int64()[2] == 6);
+}
+
+static void test_dataloader_num_batches_and_batch_shape() {
+  const int64_t N = 5;
+  const int64_t seq_len = 2;
+  Tensor input = Tensor::zeros({N, seq_len}, DType::Int64, Device::cpu(), false);
+  Tensor target = Tensor::zeros({N, seq_len}, DType::Int64, Device::cpu(), false);
+  TensorDataset ds(input, target);
+  DataLoader loader(&ds, 2, false);
+
+  assert(loader.num_batches() == 3);
+  assert(loader.batch_size() == 2);
+
+  Sample b0 = loader.get_batch(0);
+  assert((b0.first.shape() == std::vector<int64_t>{2, seq_len}));
+  assert((b0.second.shape() == std::vector<int64_t>{2, seq_len}));
+
+  Sample b_last = loader.get_batch(2);
+  assert(b_last.first.shape()[0] == 1);
+  assert(b_last.first.shape()[1] == seq_len);
+}
+
+static void test_dataloader_shuffle_deterministic() {
+  const int64_t N = 6;
+  const int64_t seq_len = 2;
+  Tensor input({N, seq_len}, DType::Int64, Device::cpu(), false);
+  Tensor target({N, seq_len}, DType::Int64, Device::cpu(), false);
+  int64_t* pi = input.data_int64();
+  for (int64_t i = 0; i < N * seq_len; ++i) pi[i] = i;
+  TensorDataset ds(input, target);
+
+  DataLoader loader1(&ds, 2, true, 42u);
+  DataLoader loader2(&ds, 2, true, 42u);
+  Sample batch1 = loader1.get_batch(0);
+  Sample batch2 = loader2.get_batch(0);
+  for (int64_t i = 0; i < batch1.first.numel(); ++i)
+    assert(batch1.first.data_int64()[i] == batch2.first.data_int64()[i]);
+}
+
+// --- Checkpointing tests ---
+
+static void test_save_load_tensor() {
+  Tensor t = Tensor::from_data({1.f, 2.f, 3.f, 4.f}, {2, 2}, false);
+  const char* path = "test_ckpt_tensor.bin";
+  save_tensor(path, t);
+  Tensor loaded = load_tensor(path);
+  std::remove(path);
+  assert(loaded.shape() == t.shape());
+  assert(loaded.dtype() == t.dtype());
+  for (int64_t i = 0; i < t.numel(); ++i)
+    assert(std::fabs(loaded.data_float()[i] - t.data_float()[i]) < 1e-6f);
+}
+
+static void test_save_load_state_dict_module_roundtrip() {
+  seed(0);
+  Linear linear(2, 3, true);
+  auto state = linear.state_dict();
+  const char* path = "test_ckpt_state.bin";
+  save_state_dict(path, state);
+  Module::StateDict loaded = load_state_dict(path);
+  std::remove(path);
+  assert(loaded.size() == state.size());
+  for (const auto& kv : state) {
+    auto it = loaded.find(kv.first);
+    assert(it != loaded.end());
+    assert(it->second.shape() == kv.second.shape());
+    assert(it->second.dtype() == kv.second.dtype());
+    if (kv.second.dtype() == DType::Float32) {
+      for (int64_t i = 0; i < kv.second.numel(); ++i)
+        assert(std::fabs(it->second.data_float()[i] - kv.second.data_float()[i]) < 1e-6f);
+    }
+  }
+}
+
+static void test_load_state_dict_restores_parameters() {
+  seed(1);
+  Linear linear1(2, 2, true);
+  auto state = linear1.state_dict();
+  seed(2);
+  Linear linear2(2, 2, true);
+  linear2.load_state_dict(state);
+  auto params1 = linear1.parameters();
+  auto params2 = linear2.parameters();
+  assert(params1.size() == params2.size());
+  for (size_t i = 0; i < params1.size(); ++i) {
+    const float* a = params1[i]->data_float();
+    const float* b = params2[i]->data_float();
+    for (int64_t j = 0; j < params1[i]->numel(); ++j)
+      assert(std::fabs(a[j] - b[j]) < 1e-6f);
+  }
+}
+
+static void test_adamw_state_dict_roundtrip() {
+  Parameter w = Parameter::zeros({2});
+  w.set_requires_grad(true);
+  std::vector<Parameter*> params = {&w};
+  AdamW opt(params, 0.01f);
+  w.set_grad(std::make_shared<Tensor>(Tensor::from_data({1.f, 0.f}, {2}, false)));
+  opt.step();
+  assert(opt.step_count() == 1);
+  auto state = opt.state_dict();
+  AdamW opt2(params, 0.01f);
+  opt2.load_state_dict(state);
+  assert(opt2.step_count() == 1);
+}
+
 // --- CrossEntropyLoss tests ---
 
 static void test_cross_entropy_known_value() {
@@ -1215,6 +1357,15 @@ int main() {
   test_attention_backward();
   test_attention_module_wrapper();
 
+  test_tensor_dataset_size_and_get();
+  test_dataloader_num_batches_and_batch_shape();
+  test_dataloader_shuffle_deterministic();
+
+  test_save_load_tensor();
+  test_save_load_state_dict_module_roundtrip();
+  test_load_state_dict_restores_parameters();
+  test_adamw_state_dict_roundtrip();
+
   test_cross_entropy_known_value();
   test_cross_entropy_grad_check_one_element();
   test_cross_entropy_module_wrapper();
@@ -1235,6 +1386,6 @@ int main() {
   test_embedding_single_vocab();
   test_dropout_p_zero_no_drop();
 
-  std::cout << "All Tensor and autograd tests passed." << std::endl;
+  std::cout << "All LLM tests passed." << std::endl;
   return 0;
 }

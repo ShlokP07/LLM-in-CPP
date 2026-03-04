@@ -58,6 +58,10 @@ public:
   float weight_decay() const { return weight_decay_; }
   int64_t step_count() const { return step_count_; }
 
+  /** Optimizer state for checkpointing: step_count and per-parameter m/v (keys "step_count", "0_m", "0_v", ...). */
+  Module::StateDict state_dict() const;
+  void load_state_dict(const Module::StateDict& state);
+
 private:
   std::vector<Parameter*> params_;
   float lr_;

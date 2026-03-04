@@ -70,6 +70,10 @@ namespace llm {
 
     Tensor reshape(const std::vector<int64_t>& new_shape) const;
     Tensor detach() const;
+
+    /** Copy data from other into this. Shapes and dtypes must match. */
+    void copy_(const Tensor& other);
+
     void backward();
     void accumulate_grad(const Tensor& g);
     void set_grad_fn(std::shared_ptr<AutogradNode> fn);

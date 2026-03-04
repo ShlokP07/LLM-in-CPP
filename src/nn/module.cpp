@@ -60,8 +60,25 @@ Module::StateDict Module::state_dict() const {
   return state;
 }
 
-void Module::load_state_dict(const StateDict& /*state*/) {
-  // Placeholder: to be implemented when checkpointing is added.
+void Module::load_state_dict(const StateDict& state) {
+  load_state_dict_impl(state, "");
+}
+
+void Module::load_state_dict_impl(const StateDict& state, const std::string& prefix) {
+  for (auto& kv : parameters_) {
+    const std::string& name = kv.first;
+    std::string full_name = prefix.empty() ? name : (prefix + "." + name);
+    auto it = state.find(full_name);
+    if (it != state.end()) {
+      kv.second.copy_(it->second);
+    }
+  }
+  for (auto& kv : modules_) {
+    const std::string& name = kv.first;
+    if (!kv.second) continue;
+    std::string child_prefix = prefix.empty() ? name : (prefix + "." + name);
+    kv.second->load_state_dict_impl(state, child_prefix);
+  }
 }
 
 void Module::collect_parameters(std::vector<Parameter*>& out,

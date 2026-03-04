@@ -23,7 +23,7 @@ else()
   message(STATUS "No BLAS/OpenBLAS found - using naive matmul")
 endif()
 
-# Source structure (only files that exist; data, checkpoint not yet implemented)
+# Source structure (only files that exist; checkpoint not yet implemented)
 set(LLM_SOURCES
   src/tensor.cpp
   src/autograd.cpp
@@ -37,10 +37,13 @@ set(LLM_SOURCES
   src/nn/softmax.cpp
   src/nn/attention.cpp
   src/nn/loss.cpp
+  src/data/dataset.cpp
+  src/data/dataloader.cpp
   src/optim/sgd.cpp
   src/optim/adamw.cpp
   src/optim/clip_grad.cpp
   src/utils/init.cpp
+  src/utils/checkpoint.cpp
 )
 
 # Create library (Phase 1: tensor + autograd + ops + basic nn module)
@@ -58,10 +61,13 @@ add_library(llm_core STATIC
   src/nn/softmax.cpp
   src/nn/attention.cpp
   src/nn/loss.cpp
+  src/data/dataset.cpp
+  src/data/dataloader.cpp
   src/optim/sgd.cpp
   src/optim/adamw.cpp
   src/optim/clip_grad.cpp
   src/utils/init.cpp
+  src/utils/checkpoint.cpp
 )
 
 target_include_directories(llm_core PUBLIC

@@ -117,6 +117,17 @@ Tensor Tensor::reshape(const std::vector<int64_t>& new_shape) const {
   return Tensor(impl);
 }
 
+void Tensor::copy_(const Tensor& other) {
+  if (!impl_ || !other.impl_)
+    throw std::runtime_error("copy_: null tensor");
+  if (impl_->shape != other.impl_->shape)
+    throw std::invalid_argument("copy_: shape mismatch");
+  if (impl_->dtype != other.impl_->dtype)
+    throw std::invalid_argument("copy_: dtype mismatch");
+  const std::size_t bytes = static_cast<std::size_t>(impl_->numel) * element_size(impl_->dtype);
+  std::memcpy(impl_->storage.get(), other.impl_->storage.get(), bytes);
+}
+
 // Copy with same data but no grad tracking (breaks the graph).
 Tensor Tensor::detach() const {
   if (!impl_) return Tensor();

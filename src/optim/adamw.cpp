@@ -1,6 +1,7 @@
 #include <llm/optim.hpp>
 
 #include <cmath>
+#include <cstring>
 
 namespace llm {
 
@@ -73,6 +74,45 @@ void AdamW::zero_grad() {
   for (Parameter* p : params_) {
     if (!p) continue;
     p->set_grad(std::shared_ptr<Tensor>());
+  }
+}
+
+Module::StateDict AdamW::state_dict() const {
+  Module::StateDict state;
+  Tensor step_t = Tensor::zeros({1}, DType::Int64, Device::cpu(), false);
+  step_t.data_int64()[0] = step_count_;
+  state.emplace("step_count", std::move(step_t));
+  for (size_t i = 0; i < state_m_.size(); ++i) {
+    const std::vector<float>& m = state_m_[i];
+    const std::vector<float>& v = state_v_[i];
+    if (m.empty()) continue;
+    Tensor tm({static_cast<int64_t>(m.size())}, DType::Float32, Device::cpu(), false);
+    Tensor tv({static_cast<int64_t>(v.size())}, DType::Float32, Device::cpu(), false);
+    std::memcpy(tm.data_float(), m.data(), m.size() * sizeof(float));
+    std::memcpy(tv.data_float(), v.data(), v.size() * sizeof(float));
+    std::string key = std::to_string(i);
+    state.emplace(key + "_m", std::move(tm));
+    state.emplace(key + "_v", std::move(tv));
+  }
+  return state;
+}
+
+void AdamW::load_state_dict(const Module::StateDict& state) {
+  auto it_sc = state.find("step_count");
+  if (it_sc != state.end() && it_sc->second.numel() >= 1)
+    step_count_ = it_sc->second.data_int64()[0];
+  for (size_t i = 0; i < state_m_.size(); ++i) {
+    std::string key = std::to_string(i);
+    auto it_m = state.find(key + "_m");
+    auto it_v = state.find(key + "_v");
+    if (it_m != state.end() && it_m->second.numel() == static_cast<int64_t>(state_m_[i].size())) {
+      std::memcpy(state_m_[i].data(), it_m->second.data_float(),
+                  state_m_[i].size() * sizeof(float));
+    }
+    if (it_v != state.end() && it_v->second.numel() == static_cast<int64_t>(state_v_[i].size())) {
+      std::memcpy(state_v_[i].data(), it_v->second.data_float(),
+                  state_v_[i].size() * sizeof(float));
+    }
   }
 }
 
