@@ -59,6 +59,7 @@ add_library(llm_core STATIC
   src/nn/activation.cpp
   src/nn/softmax.cpp
   src/nn/loss.cpp
+  src/optim/sgd.cpp
   src/utils/init.cpp
 )
 

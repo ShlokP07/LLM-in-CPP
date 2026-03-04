@@ -8,6 +8,7 @@
 #include <llm/module.hpp>
 #include <llm/init.hpp>
 #include <llm/nn.hpp>
+#include <llm/optim.hpp>
 
 #include <cassert>
 #include <cmath>
@@ -48,6 +49,7 @@ using llm::log_softmax;
 using llm::cross_entropy;
 using llm::CrossEntropyLoss;
 using llm::LayerNorm;
+using llm::SGD;
 
 // Verify that version() returns some non-null, non-empty string.
 static void test_version() {
@@ -809,6 +811,32 @@ static void test_cross_entropy_module_wrapper() {
   assert(loss.numel() == 1);
 }
 
+// --- SGD optimizer tests ---
+
+static void test_sgd_quadratic_descent() {
+  // Optimize f(w) = (w - 3)^2 starting from w=0.
+  Parameter w = Parameter::zeros({1});
+  w.set_requires_grad(true);
+
+  std::vector<Parameter*> params = {&w};
+  SGD opt(params, /*lr=*/0.1f, /*weight_decay=*/0.0f);
+
+  Tensor offset = Tensor::from_data({-3.f}, {1}, false);  // w - 3 = w + (-3)
+
+  for (int step = 0; step < 100; ++step) {
+    opt.zero_grad();
+    Tensor diff = add(w, offset);
+    Tensor sq = mul(diff, diff);
+    Tensor loss = sum(sq);
+    loss.backward();
+    opt.step();
+  }
+
+  float w_val = w.data_float()[0];
+  // w should be close to 3.
+  assert(std::fabs(w_val - 3.f) < 1e-2f);
+}
+
 int main() {
   std::cout << "Running LLM tests..." << std::endl;
 
@@ -865,6 +893,8 @@ int main() {
   test_cross_entropy_known_value();
   test_cross_entropy_grad_check_one_element();
   test_cross_entropy_module_wrapper();
+
+  test_sgd_quadratic_descent();
 
   std::cout << "All Tensor and autograd tests passed." << std::endl;
   return 0;
