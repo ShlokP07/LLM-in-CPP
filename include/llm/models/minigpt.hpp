@@ -45,6 +45,18 @@ private:
   int64_t dim_;
   int64_t num_heads_;
   int64_t head_dim_;
+
+  // Cached typed pointers to avoid per-forward map lookups/casts.
+  std::shared_ptr<Linear> q_proj_;
+  std::shared_ptr<Linear> k_proj_;
+  std::shared_ptr<Linear> v_proj_;
+  std::shared_ptr<Linear> out_proj_;
+
+  // Cached selector matrices for head split/merge.
+  // W_h: (dim, head_dim) selects the h-th head subspace from (T, dim) -> (T, head_dim)
+  // U_h: (head_dim, dim) writes head output back into the h-th slice for concatenation.
+  std::vector<Tensor> head_W_;
+  std::vector<Tensor> head_U_;
 };
 
 /**
@@ -60,6 +72,12 @@ public:
 private:
   int64_t dim_;
   int64_t ffn_dim_;
+
+  std::shared_ptr<LayerNorm> attn_ln_;
+  std::shared_ptr<MultiHeadAttention> attn_;
+  std::shared_ptr<LayerNorm> ffn_ln_;
+  std::shared_ptr<Linear> ffn_1_;
+  std::shared_ptr<Linear> ffn_2_;
 };
 
 /**
@@ -78,6 +96,12 @@ public:
 
 private:
   MiniGPTConfig config_;
+
+  std::shared_ptr<Embedding> tok_embed_;
+  std::shared_ptr<Embedding> pos_embed_;
+  std::vector<std::shared_ptr<TransformerBlock>> blocks_;
+  std::shared_ptr<LayerNorm> final_ln_;
+  std::shared_ptr<Linear> lm_head_;
 };
 
 }  // namespace models

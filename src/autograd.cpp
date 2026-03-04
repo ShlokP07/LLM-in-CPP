@@ -1,4 +1,5 @@
 #include <llm/autograd.hpp>
+#include <llm/ops.hpp>
 
 #include <algorithm>
 #include <functional>
@@ -13,15 +14,6 @@ namespace {
 bool& grad_enabled_ref() {
   static thread_local bool enabled = true;
   return enabled;
-}
-
-// Create a tensor of ones with same shape as t (float32, no grad).
-Tensor ones_like(const Tensor& t) {
-  Tensor out(t.shape(), DType::Float32, t.device(), false);
-  float* p = out.data_float();
-  for (int64_t i = 0; i < out.numel(); ++i)
-    p[i] = 1.0f;
-  return out;
 }
 
 using NodeOutputPair = std::pair<std::shared_ptr<AutogradNode>, Tensor*>;

@@ -1,5 +1,6 @@
 #include <llm/tensor.hpp>
 #include <llm/autograd.hpp>
+#include <llm/dtype.hpp>
 
 #include <algorithm>
 #include <cstring>
@@ -30,14 +31,6 @@ std::vector<int64_t> compute_strides(const std::vector<int64_t>& shape) {
     stride *= shape[i];
   }
   return strides;
-}
-
-std::size_t element_size(DType dt) {
-  switch (dt) {
-    case DType::Float32: return sizeof(float);
-    case DType::Int64: return sizeof(int64_t);
-    default: throw std::runtime_error("Unsupported DType in element_size");
-  }
 }
 
 class ReshapeBackward : public AutogradNode {

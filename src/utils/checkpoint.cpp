@@ -1,5 +1,6 @@
 #include <llm/checkpoint.hpp>
 #include <llm/tensor.hpp>
+#include <llm/dtype.hpp>
 
 #include <cstring>
 #include <fstream>
@@ -13,14 +14,6 @@ namespace {
 constexpr const char* TENSOR_MAGIC = "LLT1";
 constexpr const char* STATE_MAGIC = "LLS1";
 constexpr int32_t VERSION = 1;
-
-std::size_t element_size(DType dt) {
-  switch (dt) {
-    case DType::Float32: return sizeof(float);
-    case DType::Int64: return sizeof(int64_t);
-    default: throw std::runtime_error("checkpoint: unsupported dtype");
-  }
-}
 
 int32_t dtype_to_int(DType dt) {
   switch (dt) {
