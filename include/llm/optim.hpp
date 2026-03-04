@@ -31,5 +31,45 @@ private:
   float weight_decay_;
 };
 
+/**
+ * AdamW optimizer (Adam with decoupled weight decay).
+ *
+ * Maintains per-parameter first (m) and second (v) moment estimates,
+ * applies bias correction, then updates:
+ *   param = param - lr * m_hat / (sqrt(v_hat) + eps)
+ *   param = param * (1 - lr * weight_decay)  [decoupled weight decay]
+ */
+class AdamW {
+public:
+  AdamW(const std::vector<Parameter*>& params,
+        float lr,
+        float beta1 = 0.9f,
+        float beta2 = 0.999f,
+        float eps = 1e-8f,
+        float weight_decay = 0.0f);
+
+  void step();
+  void zero_grad();
+
+  float lr() const { return lr_; }
+  float beta1() const { return beta1_; }
+  float beta2() const { return beta2_; }
+  float eps() const { return eps_; }
+  float weight_decay() const { return weight_decay_; }
+  int64_t step_count() const { return step_count_; }
+
+private:
+  std::vector<Parameter*> params_;
+  float lr_;
+  float beta1_;
+  float beta2_;
+  float eps_;
+  float weight_decay_;
+  int64_t step_count_;
+  // Per-parameter state: state_m_[i] and state_v_[i] for params_[i] (same size as param numel)
+  std::vector<std::vector<float>> state_m_;
+  std::vector<std::vector<float>> state_v_;
+};
+
 }  // namespace llm
 

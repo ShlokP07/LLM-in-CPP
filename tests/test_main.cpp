@@ -50,6 +50,7 @@ using llm::cross_entropy;
 using llm::CrossEntropyLoss;
 using llm::LayerNorm;
 using llm::SGD;
+using llm::AdamW;
 
 // Verify that version() returns some non-null, non-empty string.
 static void test_version() {
@@ -837,6 +838,30 @@ static void test_sgd_quadratic_descent() {
   assert(std::fabs(w_val - 3.f) < 1e-2f);
 }
 
+static void test_adamw_quadratic_descent() {
+  // Same setup: minimize (w - 3)^2 with AdamW.
+  Parameter w = Parameter::zeros({1});
+  w.set_requires_grad(true);
+
+  std::vector<Parameter*> params = {&w};
+  AdamW opt(params, /*lr=*/0.1f, /*beta1=*/0.9f, /*beta2=*/0.999f,
+            /*eps=*/1e-8f, /*weight_decay=*/0.0f);
+
+  Tensor offset = Tensor::from_data({-3.f}, {1}, false);
+
+  for (int step = 0; step < 150; ++step) {
+    opt.zero_grad();
+    Tensor diff = add(w, offset);
+    Tensor sq = mul(diff, diff);
+    Tensor loss = sum(sq);
+    loss.backward();
+    opt.step();
+  }
+
+  float w_val = w.data_float()[0];
+  assert(std::fabs(w_val - 3.f) < 1e-2f);
+}
+
 int main() {
   std::cout << "Running LLM tests..." << std::endl;
 
@@ -895,6 +920,7 @@ int main() {
   test_cross_entropy_module_wrapper();
 
   test_sgd_quadratic_descent();
+  test_adamw_quadratic_descent();
 
   std::cout << "All Tensor and autograd tests passed." << std::endl;
   return 0;
