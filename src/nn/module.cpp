@@ -1,5 +1,7 @@
 #include <llm/module.hpp>
 
+#include <stdexcept>
+
 namespace llm {
 
 Parameter::Parameter(const Tensor& t) : Tensor(t) {
@@ -60,7 +62,41 @@ Module::StateDict Module::state_dict() const {
   return state;
 }
 
-void Module::load_state_dict(const StateDict& state) {
+void Module::load_state_dict(const StateDict& state, bool strict) {
+  if (!strict) {
+    load_state_dict_impl(state, "");
+    return;
+  }
+
+  // Strict mode: require exact key match and identical shape/dtype.
+  StateDict expected = this->state_dict();
+
+  // 1) Missing keys / mismatches.
+  for (const auto& kv : expected) {
+    const std::string& key = kv.first;
+    const Tensor& expected_tensor = kv.second;
+    auto it = state.find(key);
+    if (it == state.end()) {
+      throw std::runtime_error("load_state_dict(strict): missing key: " + key);
+    }
+    const Tensor& provided_tensor = it->second;
+    if (provided_tensor.shape() != expected_tensor.shape()) {
+      throw std::runtime_error("load_state_dict(strict): shape mismatch for key: " + key);
+    }
+    if (provided_tensor.dtype() != expected_tensor.dtype()) {
+      throw std::runtime_error("load_state_dict(strict): dtype mismatch for key: " + key);
+    }
+  }
+
+  // 2) Extra keys.
+  for (const auto& kv : state) {
+    const std::string& key = kv.first;
+    if (expected.find(key) == expected.end()) {
+      throw std::runtime_error("load_state_dict(strict): unexpected key: " + key);
+    }
+  }
+
+  // 3) All checks passed: perform the actual load (copy_ will still validate).
   load_state_dict_impl(state, "");
 }
 

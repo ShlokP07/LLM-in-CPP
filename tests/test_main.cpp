@@ -1332,9 +1332,7 @@ static void test_dropout_p_zero_no_drop() {
     assert(std::fabs(y.data_float()[i] - x.data_float()[i]) < 1e-5f);
 }
 
-int main() {
-  std::cout << "Running LLM tests..." << std::endl;
-
+void run_all_tests() {
   test_version();
   test_tensor_basic_shape();
   test_tensor_zeros();
@@ -1426,7 +1424,4 @@ int main() {
   test_cross_entropy_single_sample_single_class();
   test_embedding_single_vocab();
   test_dropout_p_zero_no_drop();
-
-  std::cout << "All LLM tests passed." << std::endl;
-  return 0;
 }

@@ -47,7 +47,14 @@ public:
 
   // Flat mapping from dotted names to tensors.
   virtual StateDict state_dict() const;
-  virtual void load_state_dict(const StateDict& state);
+  /**
+   * Load parameters from a state dict.
+   *
+   * - strict=false (default): load matching keys and ignore missing/extra keys.
+   * - strict=true: require exact key match and identical shape/dtype for every parameter;
+   *   throw on any mismatch or unknown key.
+   */
+  virtual void load_state_dict(const StateDict& state, bool strict = false);
 
 protected:
   std::unordered_map<std::string, Parameter> parameters_;

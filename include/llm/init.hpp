@@ -6,7 +6,12 @@
 
 namespace llm {
 
-/** Set the global RNG seed (used by uniform_, normal_, xavier_uniform_, etc.). */
+/**
+ * Set the global RNG seed (used by uniform_, normal_, xavier_uniform_, bernoulli_mask_, etc.).
+ *
+ * Thread-safety: the RNG is a single global generator and is NOT thread-safe.
+ * Use these APIs from a single thread if you want determinism/reproducibility.
+ */
 void seed(uint64_t s);
 
 /** Fill tensor with values from Uniform(low, high). In-place; expects float32. */
